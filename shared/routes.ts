@@ -24,8 +24,10 @@ export const api = {
           totalTransactions: z.number(),
           activeAgents: z.number(),
           registeredContracts: z.number(),
+          totalGasSpent: z.number(),
           recentTransactions: z.array(z.custom<typeof transactions.$inferSelect & { agentName: string; contractName: string }>()),
           activityByAgent: z.array(z.object({ name: z.string(), value: z.number() })),
+          gasUsageByContract: z.array(z.object({ name: z.string(), value: z.number() })),
         }),
       },
     },
@@ -38,13 +40,13 @@ export const api = {
         200: z.array(z.custom<typeof contracts.$inferSelect>()),
       },
     },
-    create: {
-      method: 'POST' as const,
-      path: '/api/contracts' as const,
-      input: insertContractSchema,
+    updateStatus: {
+      method: 'PATCH' as const,
+      path: '/api/contracts/:id/status' as const,
+      input: z.object({ status: z.string() }),
       responses: {
-        201: z.custom<typeof contracts.$inferSelect>(),
-        400: errorSchemas.validation,
+        200: z.custom<typeof contracts.$inferSelect>(),
+        404: errorSchemas.notFound,
       },
     },
   },
@@ -54,6 +56,15 @@ export const api = {
       path: '/api/agents' as const,
       responses: {
         200: z.array(z.custom<typeof agents.$inferSelect>()),
+      },
+    },
+    updateStatus: {
+      method: 'PATCH' as const,
+      path: '/api/agents/:id/status' as const,
+      input: z.object({ status: z.string() }),
+      responses: {
+        200: z.custom<typeof agents.$inferSelect>(),
+        404: errorSchemas.notFound,
       },
     },
   },

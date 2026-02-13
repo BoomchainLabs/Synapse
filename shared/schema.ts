@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -8,12 +8,16 @@ export const contracts = pgTable("contracts", {
   address: text("address").notNull().unique(),
   name: text("name").notNull(),
   dailyLimit: integer("daily_limit").notNull(),
+  status: text("status").notNull().default("active"), // active, paused
+  category: text("category").notNull().default("general"),
 });
 
 export const agents = pgTable("agents", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   walletAddress: text("wallet_address").notNull().unique(),
+  status: text("status").notNull().default("online"), // online, offline, idle
+  reputation: integer("reputation").notNull().default(100),
 });
 
 export const transactions = pgTable("transactions", {
@@ -21,7 +25,9 @@ export const transactions = pgTable("transactions", {
   agentId: integer("agent_id").notNull(),
   contractId: integer("contract_id").notNull(),
   timestamp: timestamp("timestamp").defaultNow(),
-  status: text("status").notNull(), // 'approved', 'rejected'
+  status: text("status").notNull(), // approved, rejected
+  gasUsed: integer("gas_used").notNull().default(0),
+  gasPrice: doublePrecision("gas_price").notNull().default(0),
 });
 
 // === BASE SCHEMAS ===
@@ -43,6 +49,8 @@ export interface DashboardStats {
   totalTransactions: number;
   activeAgents: number;
   registeredContracts: number;
+  totalGasSpent: number;
   recentTransactions: (Transaction & { agentName: string; contractName: string })[];
   activityByAgent: { name: string; value: number }[];
+  gasUsageByContract: { name: string; value: number }[];
 }
