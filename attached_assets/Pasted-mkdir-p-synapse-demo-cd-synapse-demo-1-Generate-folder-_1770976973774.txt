@@ -1,0 +1,94 @@
+mkdir -p synapse-demo && cd synapse-demo
+
+# 1️⃣ Generate folder structure
+mkdir -p data jwt genesis contracts backend ai-sdk frontend scripts
+
+# 2️⃣ Generate JWT
+openssl rand -hex 32 > jwt/jwt.hex
+
+# 3️⃣ Create placeholder contracts
+cat > contracts/EntryPoint.sol <<'EOF'
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+import "@account-abstraction/contracts/core/EntryPoint.sol";
+contract SynapseEntryPoint is EntryPoint { constructor() EntryPoint() {} }
+EOF
+
+cat > contracts/Paymaster.sol <<'EOF'
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+import "@account-abstraction/contracts/core/BasePaymaster.sol";
+contract SynapsePaymaster is BasePaymaster {
+    mapping(address=>bool) public registeredContracts;
+    function registerContract(address _contract) external { registeredContracts[_contract]=true; }
+    function validatePaymasterUserOp(UserOperation calldata userOp, bytes32, uint256) external view override returns(bytes memory context,uint256){ require(registeredContracts[userOp.callData[0]],"Contract not registered"); return ("0x",0);}
+}
+EOF
+
+cat > contracts/SmartWalletFactory.sol <<'EOF'
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+import "@account-abstraction/contracts/samples/SimpleWallet.sol";
+contract SynapseWalletFactory { mapping(address=>address) public wallets; function createWallet(address owner) external returns(address){ SimpleWallet wallet = new SimpleWallet(owner,address(this)); wallets[owner]=address(wallet); return address(wallet);} }
+EOF
+
+# 4️⃣ Genesis file
+cat > genesis/l2Genesis.json <<'EOF'
+{"config":{"chainId":12345,"homesteadBlock":0},"alloc":{},"l2OutputOracle":{"l1StartBlock":0,"l2BlockTime":2,"submissionInterval":1000},"systemConfig":{"gasToken":"ETH","entryPoint":"0xEntryPointDeployed","paymaster":"0xPaymasterDeployed","smartWalletFactory":"0xWalletFactoryDeployed"}}
+EOF
+
+# 5️⃣ Backend files
+cat > backend/register-contracts.js <<'EOF'
+const fs=require('fs'); fs.writeFileSync('./developer-registry.json',JSON.stringify({registeredContracts:['0xRegisteredContract1','0xRegisteredContract2','0xRegisteredContract3'],quotas:{'0xRegisteredContract1':{dailyLimit:1000},'0xRegisteredContract2':{dailyLimit:1000},'0xRegisteredContract3':{dailyLimit:1000}}},null,2));
+EOF
+
+cat > backend/paymaster-service.js <<'EOF'
+const express=require('express'); const bodyParser=require('body-parser'); const fs=require('fs'); const app=express(); app.use(bodyParser.json()); let registry=JSON.parse(fs.readFileSync('./developer-registry.json')); let agentActivity={}; app.post('/approve',(req,res)=>{ const {contract,agent}=req.body; if(!registry.registeredContracts.includes(contract)) return res.status(403).send({error:'Contract not registered'}); agentActivity[agent]=(agentActivity[agent]||0)+1; res.send({signature:'0xSignedUserOpPlaceholder'}); }); app.get('/registry',(req,res)=>{ res.send({...registry,agentActivity}); }); app.listen(4000,()=>console.log('Paymaster running on 4000'));
+EOF
+
+cat > backend/bundler.js <<'EOF'
+console.log('Bundler placeholder running...');
+EOF
+
+# 6️⃣ AI SDK + agent
+cat > ai-sdk/ai-agent-sdk.js <<'EOF'
+module.exports=class AIWallet{constructor(provider,wallet){this.provider=provider;this.wallet=wallet;} async sendTransaction(contract,data){return {txHash:'0xDemoTx'}}};
+EOF
+
+cat > ai-sdk/ai-agent-presentation.js <<'EOF'
+const AIWallet=require('./ai-agent-sdk'); const agents=[...Array(10)].map((_,i)=>({name:'Agent'+(i+1).toString().padStart(2,'0'),wallet:'0xWallet'+(i+1)})); async function run(){ while(1){ for(const a of agents){ console.log(a.name+' sent tx'); await new Promise(r=>setTimeout(r,200)); } } } run();
+EOF
+
+# 7️⃣ Frontend dashboard
+cat > frontend/dashboard.html <<'EOF'
+<html><body><h1>Synapse Dashboard</h1><div id="agents"></div><div id="contracts"></div><script src="dashboard.js"></script></body></html>
+EOF
+
+cat > frontend/dashboard.js <<'EOF'
+async function loadData(){const res=await fetch('http://localhost:4000/registry');const data=await res.json();document.getElementById('contracts').innerText=JSON.stringify(data.registeredContracts); document.getElementById('agents').innerText=JSON.stringify(data.agentActivity);} setInterval(loadData,1000); loadData();
+EOF
+
+# 8️⃣ Docker Compose
+cat > docker-compose.yml <<'EOF'
+version: '3.8'
+services:
+  execution: {image:'ethereum/client-go:stable',ports:['8545:8545','8551:8551'],command:['--sepolia','--authrpc.port=8551','--authrpc.jwtsecret=/shared/jwt.hex','--http','--http.addr=0.0.0.0','--http.port=8545','--http.api=eth,net,web3,txpool'],volumes:['./data:/data','./jwt:/shared']}
+  op-node: {image:'us-docker.pkg.dev/oplabs-tools-artifacts/images/op-node:latest',depends_on:['execution'],volumes:['./jwt:/shared','./genesis/l2Genesis.json:/l2Genesis.json'],command:['op-node','--l2=http://execution:8551','--l2.jwt-secret=/shared/jwt.hex','--network=sepolia','--rpc.addr=0.0.0.0','--rpc.port=9545','--genesis=/l2Genesis.json'],ports:['9545:9545']}
+  paymaster-service: {image:'node:20',working_dir:'/app',volumes:['./backend:/app'],command:'sh -c "npm install && node paymaster-service.js"',ports:['4000:4000']}
+  bundler: {image:'node:20',working_dir:'/app',volumes:['./backend:/app'],command:'sh -c "npm install && node bundler.js"',ports:['3000:3000']}
+  ai-agent-presentation: {image:'node:20',working_dir:'/app',volumes:['./ai-sdk:/app'],command:'sh -c "npm install && node ai-agent-presentation.js"'}
+EOF
+
+# 9️⃣ Start script
+cat > start.sh <<'EOF'
+#!/bin/bash
+echo "Starting Synapse v0 live demo..."
+docker-compose up -d
+sleep 10
+echo "✅ All services started: Dashboard http://localhost:5000, Paymaster 4000, Bundler 3000"
+EOF
+
+chmod +x start.sh
+
+# Done
+echo "Synapse v0 demo structure built. Run './start.sh' to launch everything!"
